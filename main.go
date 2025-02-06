@@ -24,7 +24,12 @@ type LinearIssue struct {
 		EndsAt   string `json:"endsAt"`
 	} `json:"cycle"`
 	Project *struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		Initiatives struct {
+			Nodes []struct {
+				Name string `json:"name"`
+			} `json:"nodes"`
+		} `json:"initiatives"`
 	} `json:"project"`
 }
 
@@ -114,9 +119,11 @@ func buildReport() (string, error) {
 			md.Flex += points
 		}
 
-		// Identify the initiative name
+		// Identify the initiative name by checking the project's first initiative
 		initName := "Other"
-		if issue.Project != nil && issue.Project.Name != "" {
+		if issue.Project != nil && len(issue.Project.Initiatives.Nodes) > 0 {
+			initName = issue.Project.Initiatives.Nodes[0].Name
+		} else if issue.Project != nil && issue.Project.Name != "" {
 			initName = issue.Project.Name
 		}
 
@@ -133,12 +140,11 @@ func buildReport() (string, error) {
 	}
 
 	// Sort months and build output
-	// We'll parse "January" "February" etc. ignoring year for sort. Or we might do "someMonthName 2025" if you want, but we'll keep it simple.
 	monthNames := make([]string, 0, len(monthData))
 	for m := range monthData {
 		monthNames = append(monthNames, m)
 	}
-	monthOrderByName(&monthNames) // Sort them in ascending month order
+	monthOrderByName(&monthNames)
 
 	var sb strings.Builder
 
@@ -151,7 +157,7 @@ func buildReport() (string, error) {
 	for _, m := range monthNames {
 		md := monthData[m]
 		total := md.Fixed + md.Flex
-		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(m)+":", total, md.Fixed, md.Flex)
+		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(m), total, md.Fixed, md.Flex)
 
 		// Sort initiatives
 		initNames := make([]string, 0, len(md.Initiatives))
@@ -164,7 +170,7 @@ func buildReport() (string, error) {
 		for _, in := range initNames {
 			idata := md.Initiatives[in]
 			itotal := idata.Fixed + idata.Flex
-			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", in+":", itotal, idata.Fixed, idata.Flex)
+			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", in, itotal, idata.Fixed, idata.Flex)
 		}
 
 		// Month separator
@@ -174,14 +180,14 @@ func buildReport() (string, error) {
 	return sb.String(), nil
 }
 
-// fetchLinearIssues calls Linear GraphQL, grabbing projects for each issue (i.e. “initiatives”).
+// fetchLinearIssues calls Linear GraphQL, grabbing the first initiative for the project's initiatives.
 func fetchLinearIssues() ([]LinearIssue, error) {
 	linearToken := os.Getenv("LINEAR_API_KEY")
 	if linearToken == "" {
 		return nil, fmt.Errorf("please set LINEAR_API_KEY environment variable")
 	}
 
-	// We fetch non-completed issues (first 250), including minimal project info for the first project.
+	// We fetch non-completed issues (first 250), including project name and its first initiative
 	query := `
 	query {
 	  issues(
@@ -199,6 +205,11 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 	      }
 	      project {
 	        name
+	        initiatives(first: 1) {
+	          nodes {
+	            name
+	          }
+	        }
 	      }
 	    }
 	  }
@@ -228,7 +239,7 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 	return out.Data.Issues.Nodes, nil
 }
 
-// getIssueMonth uses the existing logic: cycle midpoint unless there's an earlier in-cycle deadline.
+// getIssueMonth uses the logic: cycle midpoint unless there's an earlier in-cycle deadline.
 func getIssueMonth(issue LinearIssue) string {
 	hasCycle := (issue.Cycle != nil)
 	hasDeadline := (issue.DueDate != nil && *issue.DueDate != "")
