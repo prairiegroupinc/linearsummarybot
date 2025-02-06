@@ -6,13 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
+	// The only allowed non-stdlib import, as provided.
 	"github.com/andreyvit/mvp/httpcall"
 )
 
-// LinearIssue is a minimal struct for parsing GraphQL results
 type LinearIssue struct {
 	Id       string  `json:"id"`
 	Title    string  `json:"title"`
@@ -22,6 +23,22 @@ type LinearIssue struct {
 		StartsAt string `json:"startsAt"`
 		EndsAt   string `json:"endsAt"`
 	} `json:"cycle"`
+	Project *struct {
+		Name string `json:"name"`
+	} `json:"project"`
+}
+
+// We'll store data like:
+// monthData[monthString] = &MonthData{Fixed: X, Flex: Y, Initiatives: map[initiativeName]*InitiativeData{...}}
+type MonthData struct {
+	Fixed       int
+	Flex        int
+	Initiatives map[string]*InitiativeData
+}
+
+type InitiativeData struct {
+	Fixed int
+	Flex  int
 }
 
 func main() {
@@ -31,7 +48,6 @@ func main() {
 	httpAddr := flag.String("http", "", "Listen address for HTTP server, e.g. :8080")
 	flag.Parse()
 
-	// If -once, run and print.
 	if *onceFlag {
 		rep, err := buildReport()
 		if err != nil {
@@ -41,7 +57,6 @@ func main() {
 		return
 	}
 
-	// If -http, serve the same result on GET /
 	if *httpAddr != "" {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			rep, err := buildReport()
@@ -57,80 +72,121 @@ func main() {
 		return
 	}
 
-	// If neither flag is given, just print usage
 	flag.Usage()
 }
 
-// buildReport is the main aggregator: loads issues, classifies them, sums points, formats result.
+// buildReport loads the issues, categorizes by month and initiative, then prints.
 func buildReport() (string, error) {
 	issues, err := fetchLinearIssues()
 	if err != nil {
 		return "", err
 	}
 
-	// We'll accumulate total points by "MonthName: sum"
-	monthTotals := make(map[string]int)
+	// We'll store data by month
+	monthData := make(map[string]*MonthData)
 
 	for _, issue := range issues {
+		// Decide which month it belongs to
+		month := getIssueMonth(issue)
+		if month == "" {
+			continue
+		}
+
+		// Decide if this is fixed vs flex
+		isFixed := (issue.Cycle != nil)
 		points := 0
 		if issue.Estimate != nil {
 			points = *issue.Estimate
 		}
 
-		// Figure out which month this belongs to, if any
-		month := getIssueMonth(issue)
-		if month == "" {
-			// ignore
-			continue
+		// Look up the month record
+		md, ok := monthData[month]
+		if !ok {
+			md = &MonthData{
+				Initiatives: make(map[string]*InitiativeData),
+			}
+			monthData[month] = md
 		}
-		monthTotals[month] += points
+		// Add to month total
+		if isFixed {
+			md.Fixed += points
+		} else {
+			md.Flex += points
+		}
+
+		// Identify the initiative name
+		initName := "Other"
+		if issue.Project != nil && issue.Project.Name != "" {
+			initName = issue.Project.Name
+		}
+
+		idata, ok := md.Initiatives[initName]
+		if !ok {
+			idata = &InitiativeData{}
+			md.Initiatives[initName] = idata
+		}
+		if isFixed {
+			idata.Fixed += points
+		} else {
+			idata.Flex += points
+		}
 	}
 
-	// We want a stable month order: Jan, Feb, etc. We'll produce the lines for only the months found.
-	// We'll parse them as times with year=some fixed year, gather unique months, then sort them.
-	type mo struct {
-		t  time.Time
-		pm string
+	// Sort months and build output
+	// We'll parse "January" "February" etc. ignoring year for sort. Or we might do "someMonthName 2025" if you want, but we'll keep it simple.
+	monthNames := make([]string, 0, len(monthData))
+	for m := range monthData {
+		monthNames = append(monthNames, m)
 	}
-	var allMonths []mo
-	for m := range monthTotals {
-		// parse as January, 2006 for sorting
-		t, _ := time.Parse("January", m)
-		allMonths = append(allMonths, mo{t: t, pm: m})
-	}
-	// sort by t.Month()
-	for i := 0; i < len(allMonths); i++ {
-		for j := i + 1; j < len(allMonths); j++ {
-			if allMonths[j].t.Month() < allMonths[i].t.Month() {
-				allMonths[i], allMonths[j] = allMonths[j], allMonths[i]
-			}
-		}
-	}
+	monthOrderByName(&monthNames) // Sort them in ascending month order
 
 	var sb strings.Builder
-	for _, m := range allMonths {
-		fmt.Fprintf(&sb, "%-10s %4d pts\n", m.pm+":", monthTotals[m.pm])
+
+	const sep = "------------------------------------------------------------------\n"
+
+	// Print table header
+	fmt.Fprintf(&sb, "%-40s %7s %7s %7s\n", "", "Total", "Fixed", "Flex")
+	fmt.Fprintf(&sb, sep)
+
+	for _, m := range monthNames {
+		md := monthData[m]
+		total := md.Fixed + md.Flex
+		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(m)+":", total, md.Fixed, md.Flex)
+
+		// Sort initiatives
+		initNames := make([]string, 0, len(md.Initiatives))
+		for in := range md.Initiatives {
+			initNames = append(initNames, in)
+		}
+		sort.Strings(initNames) // alphabetical
+
+		// Print each initiative row
+		for _, in := range initNames {
+			idata := md.Initiatives[in]
+			itotal := idata.Fixed + idata.Flex
+			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", in+":", itotal, idata.Fixed, idata.Flex)
+		}
+
+		// Month separator
+		fmt.Fprintf(&sb, sep)
 	}
 
 	return sb.String(), nil
 }
 
-// fetchLinearIssues calls the Linear GraphQL API for all non-completed issues
+// fetchLinearIssues calls Linear GraphQL, grabbing projects for each issue (i.e. “initiatives”).
 func fetchLinearIssues() ([]LinearIssue, error) {
 	linearToken := os.Getenv("LINEAR_API_KEY")
 	if linearToken == "" {
 		return nil, fmt.Errorf("please set LINEAR_API_KEY environment variable")
 	}
 
-	// We fetch issues that are not completed. We'll do that via GraphQL.
-	// For simplicity, we only fetch first 250 open issues; if you have more, add pagination.
+	// We fetch non-completed issues (first 250), including minimal project info for the first project.
 	query := `
 	query {
 	  issues(
 	    first: 250
-	    filter: {
-	      completedAt: { null: true }
-	    }
+	    filter: { completedAt: { null: true } }
 	  ) {
 	    nodes {
 	      id
@@ -140,6 +196,9 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 	      cycle {
 	        startsAt
 	        endsAt
+	      }
+	      project {
+	        name
 	      }
 	    }
 	  }
@@ -169,13 +228,9 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 	return out.Data.Issues.Nodes, nil
 }
 
-// getIssueMonth implements the logic described:
-//  1. if in a cycle, use the month of the cycle's midpoint
-//     except if there's a deadline inside the cycle that is earlier than midpoint => use deadline's month
-//  2. if not in a cycle but has a deadline => use that deadline's month
-//  3. otherwise ignore => returns empty string
+// getIssueMonth uses the existing logic: cycle midpoint unless there's an earlier in-cycle deadline.
 func getIssueMonth(issue LinearIssue) string {
-	hasCycle := issue.Cycle != nil
+	hasCycle := (issue.Cycle != nil)
 	hasDeadline := (issue.DueDate != nil && *issue.DueDate != "")
 	if !hasCycle && !hasDeadline {
 		return ""
@@ -185,12 +240,11 @@ func getIssueMonth(issue LinearIssue) string {
 	if hasCycle {
 		start, err1 := time.Parse(time.RFC3339, issue.Cycle.StartsAt)
 		end, err2 := time.Parse(time.RFC3339, issue.Cycle.EndsAt)
-		if err1 != nil || err2 != nil {
-			// if we can't parse cycle times, treat as if no cycle
-			hasCycle = false
-		} else {
+		if err1 == nil && err2 == nil {
 			cycleStart, cycleEnd = start.UTC(), end.UTC()
 			cycleMid = cycleStart.Add(cycleEnd.Sub(cycleStart) / 2)
+		} else {
+			hasCycle = false
 		}
 	}
 
@@ -200,28 +254,35 @@ func getIssueMonth(issue LinearIssue) string {
 		if err == nil {
 			deadlineTime = dt.UTC()
 		} else {
-			// if we can't parse due date, treat as if no deadline
 			hasDeadline = false
 		}
 	}
 
 	switch {
 	case hasCycle && hasDeadline:
-		// If the deadline is within cycle range and earlier than midpoint, use deadline's month.
-		// If not, use midpoint's month.
 		if !deadlineTime.Before(cycleStart) && !deadlineTime.After(cycleEnd) && deadlineTime.Before(cycleMid) {
-			return deadlineTime.Format("January")
+			return deadlineTime.Format("January 2006")
 		}
-		// otherwise use midpoint month
-		return cycleMid.Format("January")
+		return cycleMid.Format("January 2006")
 
 	case hasCycle && !hasDeadline:
-		return cycleMid.Format("January")
+		return cycleMid.Format("January 2006")
 
 	case !hasCycle && hasDeadline:
-		return deadlineTime.Format("January")
+		return deadlineTime.Format("January 2006")
 
 	default:
-		return "" // should not happen given checks above
+		return ""
 	}
+}
+
+// monthOrderByName sorts a slice of “January 2006” strings in ascending month order.
+func monthOrderByName(months *[]string) {
+	sort.Slice(*months, func(i, j int) bool {
+		mi := (*months)[i]
+		mj := (*months)[j]
+		ti, _ := time.Parse("January 2006", mi)
+		tj, _ := time.Parse("January 2006", mj)
+		return ti.Before(tj)
+	})
 }
