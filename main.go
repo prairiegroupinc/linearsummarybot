@@ -180,18 +180,42 @@ func buildReport() (string, error) {
 	return sb.String(), nil
 }
 
-// fetchLinearIssues calls Linear GraphQL, grabbing the first initiative for the project's initiatives.
+// fetchPageOfLinearIssues calls Linear GraphQL to fetch a single page of issues.
+// fetchLinearIssues fetches all non-completed issues from Linear, handling pagination automatically.
 func fetchLinearIssues() ([]LinearIssue, error) {
+	var allIssues []LinearIssue
+	var after *string
+
+	for {
+		issues, endCursor, hasNextPage, err := fetchPageOfLinearIssues(after)
+		if err != nil {
+			return nil, fmt.Errorf("fetching page of issues: %w", err)
+		}
+
+		allIssues = append(allIssues, issues...)
+
+		if !hasNextPage {
+			break
+		}
+		after = &endCursor
+	}
+
+	return allIssues, nil
+}
+
+// fetchPageOfLinearIssues calls Linear GraphQL to fetch a single page of issues.
+func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error) {
 	linearToken := os.Getenv("LINEAR_API_KEY")
 	if linearToken == "" {
-		return nil, fmt.Errorf("please set LINEAR_API_KEY environment variable")
+		return nil, "", false, fmt.Errorf("please set LINEAR_API_KEY environment variable")
 	}
 
 	// We fetch non-completed issues (first 250), including project name and its first initiative
 	query := `
-	query {
+	query($after: String) {
 	  issues(
 	    first: 250
+	    after: $after
 	    filter: { completedAt: { null: true } }
 	  ) {
 	    nodes {
@@ -219,6 +243,10 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 		Data struct {
 			Issues struct {
 				Nodes []LinearIssue `json:"nodes"`
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
 			} `json:"issues"`
 		} `json:"data"`
 	}
@@ -228,15 +256,18 @@ func fetchLinearIssues() ([]LinearIssue, error) {
 		BaseURL:     "https://api.linear.app",
 		Path:        "/graphql",
 		Headers:     map[string][]string{"Authorization": {"Bearer " + linearToken}},
-		Input:       map[string]any{"query": query},
+		Input:       map[string]any{
+			"query":     query,
+			"variables": map[string]any{"after": after},
+		},
 		OutputPtr:   &out,
 		MaxAttempts: 3,
 	}
 	err := req.Do()
 	if err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
-	return out.Data.Issues.Nodes, nil
+	return out.Data.Issues.Nodes, out.Data.Issues.PageInfo.EndCursor, out.Data.Issues.PageInfo.HasNextPage, nil
 }
 
 // getIssueMonth uses the logic: cycle midpoint unless there's an earlier in-cycle deadline.
