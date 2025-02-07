@@ -152,7 +152,7 @@ func buildReport() (string, error) {
 
 	// Print table header
 	fmt.Fprintf(&sb, "%-40s %7s %7s %7s\n", "", "Total", "Fixed", "Flex")
-	fmt.Fprintf(&sb, sep)
+	sb.WriteString(sep)
 
 	for _, m := range monthNames {
 		md := monthData[m]
@@ -174,7 +174,7 @@ func buildReport() (string, error) {
 		}
 
 		// Month separator
-		fmt.Fprintf(&sb, sep)
+		sb.WriteString(sep)
 	}
 
 	return sb.String(), nil
