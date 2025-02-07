@@ -28,7 +28,7 @@ func formatTextReport(report *Report) string {
 	// Print orphaned issues if any exist
 	hasOrphans := false
 	for _, md := range report.Months {
-		if len(md.Orphans) > 0 {
+		if other, ok := md.Initiatives["Other"]; ok && len(other.Issues) > 0 {
 			hasOrphans = true
 			break
 		}
@@ -37,13 +37,13 @@ func formatTextReport(report *Report) string {
 	if hasOrphans {
 		sb.WriteString("\n\nIssues without a project:\n")
 		for _, md := range report.Months {
-			orphans := md.Orphans
-			if len(orphans) == 0 {
+			other, ok := md.Initiatives["Other"]
+			if !ok || len(other.Issues) == 0 {
 				continue
 			}
 			fmt.Fprintf(&sb, "\n%s:\n", strings.ToUpper(md.Name))
 			// Print sorted issues
-			for _, issue := range orphans {
+			for _, issue := range other.Issues {
 				fmt.Fprintf(&sb, "  [%2d] %s: %s\n", issue.Points, issue.Identifier, issue.Title)
 			}
 		}

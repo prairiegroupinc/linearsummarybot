@@ -19,7 +19,6 @@ type MonthData struct {
 	Name        string
 	Key         int // YYYYMM format
 	Initiatives map[string]*InitiativeData
-	Orphans     []IssueData
 
 	// Cached calculations
 	Fixed   int
@@ -37,6 +36,7 @@ type InitiativeData struct {
 	Planned int
 	Flex    int
 	Total   int
+	Issues  []*IssueData
 }
 
 type Schedule int

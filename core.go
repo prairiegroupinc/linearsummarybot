@@ -3,7 +3,6 @@ package main
 import (
 	"maps"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -138,21 +137,22 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 				Name:        issue.MonthName,
 				Key:         issue.MonthKey,
 				Initiatives: make(map[string]*InitiativeData),
-				Orphans:     make([]IssueData, 0),
 			}
 			monthData[issue.MonthName] = md
 		}
 
-		// Add to initiatives or orphans
-		if issue.InitName == "Other" {
-			md.Orphans = append(md.Orphans, *issue)
-		}
-
+		// Add to initiatives ("Other" for orphans)
 		idata, ok := md.Initiatives[issue.InitName]
 		if !ok {
-			idata = &InitiativeData{Name: issue.InitName}
+			idata = &InitiativeData{
+				Name:   issue.InitName,
+				Issues: make([]*IssueData, 0),
+			}
 			md.Initiatives[issue.InitName] = idata
 		}
+
+		// Store the issue
+		idata.Issues = append(idata.Issues, issue)
 
 		switch issue.Schedule {
 		case Fixed:
@@ -189,14 +189,6 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 		// Sort initiatives by total points (descending)
 		slices.SortFunc(initSlice, func(a, b *InitiativeData) int {
 			return b.Total - a.Total
-		})
-
-		// Sort orphans by points (desc) and identifier
-		slices.SortFunc(md.Orphans, func(a, b IssueData) int {
-			if a.Points != b.Points {
-				return b.Points - a.Points // descending
-			}
-			return strings.Compare(a.Identifier, b.Identifier)
 		})
 
 		// Store sorted initiatives
