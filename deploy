@@ -14,3 +14,4 @@ now=$(date '+%Y-%m-%d-T%H%M%S')
 GOOS=linux GOARCH=$arch go build -o "/tmp/$service-linux-$arch-$now" .
 scp "/tmp/$service-linux-$arch-$now" "$server:~/"
 ssh $server "sudo install -m 755 -o root -g root ~/$service-linux-$arch-$now /srv/$service/bin/$service"
+ssh $server "sudo systemctl restart $service"
