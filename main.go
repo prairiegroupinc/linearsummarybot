@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"log"
 	"net/http"
 	"os"
@@ -42,6 +43,7 @@ type MonthData struct {
 }
 
 type InitiativeData struct {
+	Name  string
 	Fixed int
 	Flex  int
 }
@@ -129,7 +131,7 @@ func buildReport() (string, error) {
 
 		idata, ok := md.Initiatives[initName]
 		if !ok {
-			idata = &InitiativeData{}
+			idata = &InitiativeData{Name: initName}
 			md.Initiatives[initName] = idata
 		}
 		if isFixed {
@@ -159,18 +161,21 @@ func buildReport() (string, error) {
 		total := md.Fixed + md.Flex
 		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(m), total, md.Fixed, md.Flex)
 
-		// Sort initiatives
-		initNames := make([]string, 0, len(md.Initiatives))
-		for in := range md.Initiatives {
-			initNames = append(initNames, in)
+		// Convert map to slice for sorting
+		initSlice := make([]*InitiativeData, 0, len(md.Initiatives))
+		for _, idata := range md.Initiatives {
+			initSlice = append(initSlice, idata)
 		}
-		sort.Strings(initNames) // alphabetical
+
+		// Sort initiatives by name
+		slices.SortFunc(initSlice, func(a, b *InitiativeData) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 
 		// Print each initiative row
-		for _, in := range initNames {
-			idata := md.Initiatives[in]
+		for _, idata := range initSlice {
 			itotal := idata.Fixed + idata.Flex
-			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", in, itotal, idata.Fixed, idata.Flex)
+			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", idata.Name, itotal, idata.Fixed, idata.Flex)
 		}
 
 		// Month separator
