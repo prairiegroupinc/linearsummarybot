@@ -20,3 +20,13 @@ All issues are split into 3 categories:
 * Fixed: issues added to a cycle and having a due date before (cycle end + 14 days). By our conventions, these issues are fixed commitments, and moving them must be negotiated with the business team.
 * Planned: all other issues added to a cycle. These are basically "arbitrarily planned to be done in a given week", and can be rescheduled within reason.
 * Flex: issues with a due date but not yet added to a cycle. These represent the date we roughly want to do them by, but the date isn't a hard commitment and can be moved within reason.
+
+To attribute an issue to a month:
+
+1. If it is assigned to a cycle, and has a deadline:
+
+  - ...if the deadline is within the cycle and before mid-cycle, we use the deadline's month;
+
+  - ...otherwise we use the mid-cycle's month.
+
+2. If the issue is not assigned to a cycle, we use the deadline's month.

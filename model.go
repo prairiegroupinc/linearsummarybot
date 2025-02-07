@@ -5,11 +5,30 @@ type Report struct {
 	Months []*MonthData
 }
 
+type IssueData struct {
+	Identifier string
+	Title      string
+	Points     int
+	Schedule   Schedule
+	MonthName  string
+	MonthKey   int
+	InitName   string // empty if orphaned
+}
+
 type MonthData struct {
 	Name        string
 	Key         int // YYYYMM format
 	Initiatives map[string]*InitiativeData
-	Orphans     []LinearIssue
+	Orphans     []IssueData
+
+	// Cached calculations
+	Fixed   int
+	Planned int
+	Flex    int
+	Total   int
+
+	// Cached sorting
+	SortedInitiatives []*InitiativeData
 }
 
 type InitiativeData struct {
@@ -19,3 +38,12 @@ type InitiativeData struct {
 	Flex    int
 	Total   int
 }
+
+type Schedule int
+
+const (
+	Unscheduled Schedule = iota
+	Fixed
+	Planned
+	Flex
+)
