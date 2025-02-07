@@ -110,6 +110,9 @@ func buildReport() (string, error) {
 		if issue.Estimate != nil {
 			points = *issue.Estimate
 		}
+		if points == 0 {
+			continue
+		}
 
 		md, ok := monthData[monthName]
 		if !ok {
@@ -134,7 +137,7 @@ func buildReport() (string, error) {
 			initName = issue.Project.Initiatives.Nodes[0].Name
 		} else if issue.Project != nil && issue.Project.Name != "" {
 			initName = issue.Project.Name
-		} else if points != 0 {
+		} else {
 			md.Orphans = append(md.Orphans, issue)
 		}
 
