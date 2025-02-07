@@ -53,16 +53,16 @@ func formatTextReport(report *Report) string {
 	return sb.String()
 }
 
-func buildReport() (string, error) {
+func buildReport() (*Report, error) {
 	issues, err := fetchLinearIssues()
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch issues: %v", err)
+		return nil, fmt.Errorf("failed to fetch issues: %v", err)
 	}
 
 	report, err := computeReport(issues)
 	if err != nil {
-		return "", fmt.Errorf("failed to compute report: %v", err)
+		return nil, fmt.Errorf("failed to compute report: %v", err)
 	}
 
-	return formatTextReport(report), nil
+	return report, nil
 }

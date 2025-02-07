@@ -1,5 +1,7 @@
 package main
 
+import "sort"
+
 // Report represents a complete summary of all issues organized by month
 type Report struct {
 	Months []*MonthData
@@ -13,6 +15,7 @@ type IssueData struct {
 	MonthName  string
 	MonthKey   int
 	InitName   string // empty if orphaned
+	URL        string
 }
 
 type MonthData struct {
@@ -37,6 +40,16 @@ type InitiativeData struct {
 	Flex    int
 	Total   int
 	Issues  []*IssueData
+}
+
+// sortIssues sorts Issues by points (descending) and identifier (ascending)
+func (i *InitiativeData) sortIssues() {
+	sort.Slice(i.Issues, func(a, b int) bool {
+		if i.Issues[a].Points != i.Issues[b].Points {
+			return i.Issues[a].Points > i.Issues[b].Points // descending
+		}
+		return i.Issues[a].Identifier < i.Issues[b].Identifier // ascending
+	})
 }
 
 type Schedule int

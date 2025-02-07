@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	// The only allowed non-stdlib import, as provided.
 )
 
@@ -25,17 +24,7 @@ func main() {
 	}
 
 	if *httpAddr != "" {
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			rep, err := buildReport()
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			fmt.Fprint(w, rep)
-		})
-		log.Printf("Listening on %s", *httpAddr)
-		log.Fatal(http.ListenAndServe(*httpAddr, nil))
+		startWeb(*httpAddr)
 		return
 	}
 

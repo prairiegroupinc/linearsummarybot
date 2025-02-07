@@ -1,0 +1,53 @@
+<div class="max-w-4xl mx-auto px-4 py-4">
+    {{range .Report.Months}}
+    <div class="mb-4 bg-white rounded-lg shadow-lg overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <div class="flex text-sm text-gray-600">
+                <div class="flex-1">
+                    <h2 class="text-2xl font-semibold text-gray-800">{{.Name}}</h2>
+                </div>
+                <div class="w-16 text-right font-medium">Total</div>
+                <div class="w-16 text-right font-medium">Fixed</div>
+                <div class="w-16 text-right font-medium">Sched</div>
+                <div class="w-16 text-right font-medium pr-4">Flex</div>
+            </div>
+            <div class="flex text-sm text-gray-600">
+                <div class="flex-1"></div>
+                <div class="w-16 text-right font-semibold">{{.Total}}</div>
+                <div class="w-16 text-right font-semibold">{{.Fixed}}</div>
+                <div class="w-16 text-right font-semibold">{{.Planned}}</div>
+                <div class="w-16 text-right font-semibold pr-4">{{.Flex}}</div>
+            </div>
+        </div>
+
+        <div class="divide-y divide-gray-200">
+            {{range .SortedInitiatives}}
+            <details class="group">
+                <summary class="flex items-center cursor-pointer list-none px-4 py-2 hover:bg-gray-50">
+                    <h3 class="text-base text-gray-800 flex-1">{{.Name}}</h3>
+                    <div class="flex text-sm text-gray-600">
+                        <div class="w-16 text-right">{{.Total}}</div>
+                        <div class="w-16 text-right">{{.Fixed}}</div>
+                        <div class="w-16 text-right">{{.Planned}}</div>
+                        <div class="w-16 text-right pr-4">{{.Flex}}</div>
+                    </div>
+                </summary>
+                {{if .Issues}}
+                <div class="py-1">
+                    {{range .Issues}}
+                    <a href="{{.URL}}" target="_blank" class="flex items-center text-sm space-x-2 hover:bg-gray-50 px-4 py-0.5">
+                        <span class="flex-none w-8 inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {{.Points}}
+                        </span>
+                        <span class="flex-none w-14 text-xs text-gray-500 hover:text-gray-900">{{.Identifier}}</span>
+                        <span class="flex-1 text-gray-700 px-2">{{.Title}}</span>
+                    </a>
+                    {{end}}
+                </div>
+                {{end}}
+            </details>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>

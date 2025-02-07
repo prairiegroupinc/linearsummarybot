@@ -88,6 +88,7 @@ func makeIssue(issue LinearIssue) *IssueData {
 		MonthName:  monthName,
 		MonthKey:   monthKey,
 		InitName:   initName,
+		URL:        issue.URL,
 	}
 
 	return result
@@ -193,6 +194,11 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 
 		// Store sorted initiatives
 		md.SortedInitiatives = initSlice
+
+		// Sort issues within each initiative
+		for _, idata := range initSlice {
+			idata.sortIssues()
+		}
 	}
 
 	return &Report{Months: monthSlice}, nil
