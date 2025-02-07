@@ -216,7 +216,9 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 	  issues(
 	    first: 250
 	    after: $after
-	    filter: { completedAt: { null: true } }
+	    filter: {
+	      state: { type: { nin: ["completed", "canceled"] } }
+	    }
 	  ) {
 	    nodes {
 	      id
@@ -242,7 +244,7 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 	var out struct {
 		Data struct {
 			Issues struct {
-				Nodes []LinearIssue `json:"nodes"`
+				Nodes    []LinearIssue `json:"nodes"`
 				PageInfo struct {
 					HasNextPage bool   `json:"hasNextPage"`
 					EndCursor   string `json:"endCursor"`
@@ -252,11 +254,11 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 	}
 
 	req := &httpcall.Request{
-		Method:      "POST",
-		BaseURL:     "https://api.linear.app",
-		Path:        "/graphql",
-		Headers:     map[string][]string{"Authorization": {"Bearer " + linearToken}},
-		Input:       map[string]any{
+		Method:  "POST",
+		BaseURL: "https://api.linear.app",
+		Path:    "/graphql",
+		Headers: map[string][]string{"Authorization": {"Bearer " + linearToken}},
+		Input: map[string]any{
 			"query":     query,
 			"variables": map[string]any{"after": after},
 		},
