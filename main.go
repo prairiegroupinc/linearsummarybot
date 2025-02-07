@@ -40,17 +40,16 @@ type LinearIssue struct {
 type MonthData struct {
 	Name        string
 	Key         int // YYYYMM format
-	Fixed       int
-	Flex        int
 	Initiatives map[string]*InitiativeData
 	Orphans     []LinearIssue
 }
 
 type InitiativeData struct {
-	Name  string
-	Fixed int
-	Flex  int
-	Total int
+	Name    string
+	Fixed   int
+	Planned int
+	Flex    int
+	Total   int
 }
 
 func main() {
@@ -104,8 +103,7 @@ func buildReport() (string, error) {
 			continue
 		}
 
-		// Decide if this is fixed vs flex
-		isFixed := (issue.Cycle != nil)
+		// Decide if this is fixed, planned, or flex
 		points := 0
 		if issue.Estimate != nil {
 			points = *issue.Estimate
@@ -124,12 +122,6 @@ func buildReport() (string, error) {
 			}
 			monthData[monthName] = md
 		}
-		// Add to month total
-		if isFixed {
-			md.Fixed += points
-		} else {
-			md.Flex += points
-		}
 
 		// Identify the initiative name by checking the project's first initiative
 		initName := "Other"
@@ -146,12 +138,33 @@ func buildReport() (string, error) {
 			idata = &InitiativeData{Name: initName}
 			md.Initiatives[initName] = idata
 		}
-		if isFixed {
-			idata.Fixed += points
+		if issue.Cycle != nil {
+			// Parse cycle end date
+			cycleEnd, err := parseDateString(issue.Cycle.EndsAt)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse cycle end date: %v", err)
+			}
+
+			// Check if there's a deadline within 14 days of cycle end
+			isFixed := false
+			if issue.DueDate != nil {
+				dueDate, err := parseDateString(*issue.DueDate)
+				if err != nil {
+					return "", fmt.Errorf("failed to parse due date: %v", err)
+				}
+				// Fixed if due date is within 14 days of cycle end
+				isFixed = dueDate.Before(cycleEnd.Add(14 * 24 * time.Hour))
+			}
+
+			if isFixed {
+				idata.Fixed += points
+			} else {
+				idata.Planned += points
+			}
 		} else {
 			idata.Flex += points
 		}
-		idata.Total = idata.Fixed + idata.Flex
+		idata.Total = idata.Fixed + idata.Planned + idata.Flex
 	}
 
 	// Get sorted slice of months
@@ -164,16 +177,23 @@ func buildReport() (string, error) {
 
 	var sb strings.Builder
 
-	const sep = "------------------------------------------------------------------\n"
+	const sep = "---------------------------------------------------------------------\n"
 
 	// Print table header
-	fmt.Fprintf(&sb, "%-40s %7s %7s %7s\n", "", "Total", "Fixed", "Flex")
+	fmt.Fprintf(&sb, "%-45s %5s %5s %5s %5s\n", "", "Total", "Fixed", "Sched", "Flex")
 	sb.WriteString(sep)
 
 	for _, md := range monthSlice {
 
-		total := md.Fixed + md.Flex
-		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(md.Name), total, md.Fixed, md.Flex)
+		// Calculate month totals from initiatives
+		var fixed, planned, flex int
+		for _, idata := range md.Initiatives {
+			fixed += idata.Fixed
+			planned += idata.Planned
+			flex += idata.Flex
+		}
+		total := fixed + planned + flex
+		fmt.Fprintf(&sb, "%-45s %5d %5d %5d %5d\n", strings.ToUpper(md.Name), total, fixed, planned, flex)
 
 		// Get sorted slice of initiatives
 		initSlice := slices.Collect(maps.Values(md.Initiatives))
@@ -185,7 +205,7 @@ func buildReport() (string, error) {
 
 		// Print each initiative row
 		for _, idata := range initSlice {
-			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", idata.Name, idata.Total, idata.Fixed, idata.Flex)
+			fmt.Fprintf(&sb, "%-45s %5d %5d %5d %5d\n", idata.Name, idata.Total, idata.Fixed, idata.Planned, idata.Flex)
 		}
 
 		// Month separator
@@ -332,6 +352,18 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 
 // getIssueMonth uses the logic: cycle midpoint unless there's an earlier in-cycle deadline.
 // Returns month name and key (YYYYMM format)
+func parseDateString(dateStr string) (time.Time, error) {
+	// Try RFC3339 first
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t, nil
+	}
+	// Try YYYY-MM-DD
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("failed to parse date: %s", dateStr)
+}
+
 func getIssueMonth(issue LinearIssue) (string, int) {
 	hasCycle := (issue.Cycle != nil)
 	hasDeadline := (issue.DueDate != nil && *issue.DueDate != "")
