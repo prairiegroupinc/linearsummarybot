@@ -16,11 +16,12 @@ import (
 )
 
 type LinearIssue struct {
-	Id       string  `json:"id"`
-	Title    string  `json:"title"`
-	Estimate *int    `json:"estimate"`
-	DueDate  *string `json:"dueDate"`
-	Cycle    *struct {
+	Id         string  `json:"id"`
+	Identifier string  `json:"identifier"`
+	Title      string  `json:"title"`
+	Estimate   *int    `json:"estimate"`
+	DueDate    *string `json:"dueDate"`
+	Cycle      *struct {
 		StartsAt string `json:"startsAt"`
 		EndsAt   string `json:"endsAt"`
 	} `json:"cycle"`
@@ -42,6 +43,7 @@ type MonthData struct {
 	Fixed       int
 	Flex        int
 	Initiatives map[string]*InitiativeData
+	Orphans     []LinearIssue
 }
 
 type InitiativeData struct {
@@ -115,6 +117,7 @@ func buildReport() (string, error) {
 				Name:        monthName,
 				Key:         monthKey,
 				Initiatives: make(map[string]*InitiativeData),
+				Orphans:     make([]LinearIssue, 0),
 			}
 			monthData[monthName] = md
 		}
@@ -131,6 +134,8 @@ func buildReport() (string, error) {
 			initName = issue.Project.Initiatives.Nodes[0].Name
 		} else if issue.Project != nil && issue.Project.Name != "" {
 			initName = issue.Project.Name
+		} else if points != 0 {
+			md.Orphans = append(md.Orphans, issue)
 		}
 
 		idata, ok := md.Initiatives[initName]
@@ -184,6 +189,48 @@ func buildReport() (string, error) {
 		sb.WriteString(sep)
 	}
 
+	// Print orphaned issues if any exist
+	hasOrphans := false
+	for _, md := range monthSlice {
+		if len(md.Orphans) > 0 {
+			hasOrphans = true
+			break
+		}
+	}
+
+	if hasOrphans {
+		sb.WriteString("\n\nIssues without a project:\n")
+		for _, md := range monthSlice {
+			orphans := md.Orphans
+			if len(orphans) == 0 {
+				continue
+			}
+			fmt.Fprintf(&sb, "\n%s:\n", strings.ToUpper(md.Name))
+			// Sort orphaned issues
+			// Sort by points (desc) and identifier
+			slices.SortFunc(orphans, func(a, b LinearIssue) int {
+				aPoints := 0
+				if a.Estimate != nil {
+					aPoints = *a.Estimate
+				}
+				bPoints := 0
+				if b.Estimate != nil {
+					bPoints = *b.Estimate
+				}
+				if aPoints != bPoints {
+					return bPoints - aPoints // descending
+				}
+				return strings.Compare(a.Identifier, b.Identifier)
+			})
+			// Print sorted issues
+			for _, issue := range orphans {
+				points := *issue.Estimate // safe because we filtered nil/0 above
+				fmt.Fprintf(&sb, "  [%2d] %s - %s\n", points, issue.Identifier, issue.Title)
+			}
+		}
+		sb.WriteString(sep)
+	}
+
 	return sb.String(), nil
 }
 
@@ -229,6 +276,7 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 	  ) {
 	    nodes {
 	      id
+	      identifier
 	      title
 	      estimate
 	      dueDate
