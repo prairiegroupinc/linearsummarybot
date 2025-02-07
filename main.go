@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"slices"
 	"log"
+	"maps"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,6 +37,8 @@ type LinearIssue struct {
 // We'll store data like:
 // monthData[monthString] = &MonthData{Fixed: X, Flex: Y, Initiatives: map[initiativeName]*InitiativeData{...}}
 type MonthData struct {
+	Name        string
+	Key         int // YYYYMM format
 	Fixed       int
 	Flex        int
 	Initiatives map[string]*InitiativeData
@@ -46,6 +48,7 @@ type InitiativeData struct {
 	Name  string
 	Fixed int
 	Flex  int
+	Total int
 }
 
 func main() {
@@ -94,8 +97,8 @@ func buildReport() (string, error) {
 
 	for _, issue := range issues {
 		// Decide which month it belongs to
-		month := getIssueMonth(issue)
-		if month == "" {
+		monthName, monthKey := getIssueMonth(issue)
+		if monthName == "" {
 			continue
 		}
 
@@ -106,13 +109,14 @@ func buildReport() (string, error) {
 			points = *issue.Estimate
 		}
 
-		// Look up the month record
-		md, ok := monthData[month]
+		md, ok := monthData[monthName]
 		if !ok {
 			md = &MonthData{
+				Name:        monthName,
+				Key:         monthKey,
 				Initiatives: make(map[string]*InitiativeData),
 			}
-			monthData[month] = md
+			monthData[monthName] = md
 		}
 		// Add to month total
 		if isFixed {
@@ -139,14 +143,16 @@ func buildReport() (string, error) {
 		} else {
 			idata.Flex += points
 		}
+		idata.Total = idata.Fixed + idata.Flex
 	}
 
-	// Sort months and build output
-	monthNames := make([]string, 0, len(monthData))
-	for m := range monthData {
-		monthNames = append(monthNames, m)
-	}
-	monthOrderByName(&monthNames)
+	// Get sorted slice of months
+	monthSlice := slices.Collect(maps.Values(monthData))
+
+	// Sort months by key
+	slices.SortFunc(monthSlice, func(a, b *MonthData) int {
+		return a.Key - b.Key
+	})
 
 	var sb strings.Builder
 
@@ -156,26 +162,22 @@ func buildReport() (string, error) {
 	fmt.Fprintf(&sb, "%-40s %7s %7s %7s\n", "", "Total", "Fixed", "Flex")
 	sb.WriteString(sep)
 
-	for _, m := range monthNames {
-		md := monthData[m]
+	for _, md := range monthSlice {
+
 		total := md.Fixed + md.Flex
-		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(m), total, md.Fixed, md.Flex)
+		fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", strings.ToUpper(md.Name), total, md.Fixed, md.Flex)
 
-		// Convert map to slice for sorting
-		initSlice := make([]*InitiativeData, 0, len(md.Initiatives))
-		for _, idata := range md.Initiatives {
-			initSlice = append(initSlice, idata)
-		}
+		// Get sorted slice of initiatives
+		initSlice := slices.Collect(maps.Values(md.Initiatives))
 
-		// Sort initiatives by name
+		// Sort initiatives by total points (descending)
 		slices.SortFunc(initSlice, func(a, b *InitiativeData) int {
-			return strings.Compare(a.Name, b.Name)
+			return b.Total - a.Total
 		})
 
 		// Print each initiative row
 		for _, idata := range initSlice {
-			itotal := idata.Fixed + idata.Flex
-			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", idata.Name, itotal, idata.Fixed, idata.Flex)
+			fmt.Fprintf(&sb, "%-40s %7d %7d %7d\n", idata.Name, idata.Total, idata.Fixed, idata.Flex)
 		}
 
 		// Month separator
@@ -278,11 +280,12 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 }
 
 // getIssueMonth uses the logic: cycle midpoint unless there's an earlier in-cycle deadline.
-func getIssueMonth(issue LinearIssue) string {
+// Returns month name and key (YYYYMM format)
+func getIssueMonth(issue LinearIssue) (string, int) {
 	hasCycle := (issue.Cycle != nil)
 	hasDeadline := (issue.DueDate != nil && *issue.DueDate != "")
 	if !hasCycle && !hasDeadline {
-		return ""
+		return "", 0
 	}
 
 	var cycleStart, cycleEnd, cycleMid time.Time
@@ -307,31 +310,20 @@ func getIssueMonth(issue LinearIssue) string {
 		}
 	}
 
+	var t time.Time
 	switch {
 	case hasCycle && hasDeadline:
 		if !deadlineTime.Before(cycleStart) && !deadlineTime.After(cycleEnd) && deadlineTime.Before(cycleMid) {
-			return deadlineTime.Format("January 2006")
+			t = deadlineTime
+		} else {
+			t = cycleMid
 		}
-		return cycleMid.Format("January 2006")
-
 	case hasCycle && !hasDeadline:
-		return cycleMid.Format("January 2006")
-
+		t = cycleMid
 	case !hasCycle && hasDeadline:
-		return deadlineTime.Format("January 2006")
-
+		t = deadlineTime
 	default:
-		return ""
+		return "", 0
 	}
-}
-
-// monthOrderByName sorts a slice of “January 2006” strings in ascending month order.
-func monthOrderByName(months *[]string) {
-	sort.Slice(*months, func(i, j int) bool {
-		mi := (*months)[i]
-		mj := (*months)[j]
-		ti, _ := time.Parse("January 2006", mi)
-		tj, _ := time.Parse("January 2006", mj)
-		return ti.Before(tj)
-	})
+	return t.Format("January 2006"), t.Year()*100 + int(t.Month())
 }
