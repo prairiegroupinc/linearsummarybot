@@ -123,6 +123,9 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 	// First convert all issues
 	wrappedIssues := make([]*IssueData, 0, len(issues))
 	for _, issue := range issues {
+		if _, ok := StatesToSkip[issue.State.Name]; ok {
+			continue
+		}
 		if wrapped := makeIssue(issue); wrapped != nil {
 			wrappedIssues = append(wrappedIssues, wrapped)
 		}

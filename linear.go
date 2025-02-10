@@ -14,7 +14,10 @@ type LinearIssue struct {
 	Estimate   *int    `json:"estimate"`
 	DueDate    *string `json:"dueDate"`
 	URL        string  `json:"url"`
-	Cycle      *struct {
+	State      struct {
+		Name string `json:"name"`
+	} `json:"state"`
+	Cycle *struct {
 		StartsAt string `json:"startsAt"`
 		EndsAt   string `json:"endsAt"`
 	} `json:"cycle"`
@@ -73,6 +76,9 @@ func fetchPageOfLinearIssues(after *string) ([]LinearIssue, string, bool, error)
 	      estimate
 	      dueDate
 	      url
+		  state {
+		    name
+		  }
 	      cycle {
 	        startsAt
 	        endsAt
