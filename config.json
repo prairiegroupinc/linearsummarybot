@@ -1,0 +1,44 @@
+{
+  "states_to_skip": [
+    "In QA",
+    "In QA Prod",
+    "QA Rejected",
+  ],
+
+  "tags_to_buckets": {
+    "LastMinute": "Last Minute",
+  },
+
+  "default_capacity": 160,
+
+  "months": {
+    "2025-05": {
+      "capacity": 160,
+      "budget": {
+        "Last Minute": 40,
+        "Reliability": 40,
+      }
+    },
+    "2025-06": {
+      "capacity": 140,
+      "budget": {
+        "Last Minute": 40,
+        "Reliability": 40,
+      }
+    },
+    "2025-07": {
+      "capacity": 160,
+      "budget": {
+        "Last Minute": 40,
+        "Reliability": 40,
+      }
+    },
+    "2025-08": {
+      "capacity": 140,
+      "budget": {
+        "Last Minute": 40,
+        "Reliability": 40,
+      }
+    },
+  }
+}

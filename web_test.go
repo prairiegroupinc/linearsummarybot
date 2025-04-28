@@ -4,6 +4,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/prairiegroupinc/linearsummarybot/yearmonth"
 )
 
 func newMockReport() *Report {
@@ -24,9 +26,9 @@ func newMockReport() *Report {
 	}
 
 	other := &InitiativeData{
-		Name:    "Other",
-		Fixed:   1,
-		Total:   1,
+		Name:  "Other",
+		Fixed: 1,
+		Total: 1,
 		Issues: []*IssueData{
 			{
 				Identifier: "DEV-225",
@@ -39,15 +41,15 @@ func newMockReport() *Report {
 
 	month := &MonthData{
 		Name: "February 2025",
-		Key:  202502,
+		Key:  yearmonth.Make(2025, 2),
 		Initiatives: map[string]*InitiativeData{
 			"AG MVP": agMVP,
 			"Other":  other,
 		},
 		SortedInitiatives: []*InitiativeData{agMVP, other},
-		Fixed:            81,
-		Planned:          1,
-		Total:            82,
+		Fixed:             81,
+		Planned:           1,
+		Total:             82,
 	}
 
 	return &Report{

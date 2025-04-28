@@ -10,6 +10,8 @@ import (
 func main() {
 	log.SetFlags(0)
 
+	loadConfig()
+
 	onceFlag := flag.Bool("once", false, "Run once on launch")
 	httpAddr := flag.String("http", "", "Listen address for HTTP server, e.g. :8080")
 	flag.Parse()

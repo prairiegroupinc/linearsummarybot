@@ -16,3 +16,10 @@ func parseDateString(dateStr string) (time.Time, error) {
 	}
 	return time.Time{}, fmt.Errorf("failed to parse date: %s", dateStr)
 }
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}

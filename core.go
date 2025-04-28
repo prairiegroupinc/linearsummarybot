@@ -1,9 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"maps"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/prairiegroupinc/linearsummarybot/yearmonth"
 )
 
 func makeIssue(issue LinearIssue) *IssueData {
@@ -48,15 +52,6 @@ func makeIssue(issue LinearIssue) *IssueData {
 		return nil
 	}
 	monthName := targetDate.Format("January 2006")
-	monthKey := targetDate.Year()*100 + int(targetDate.Month())
-
-	// Compute initiative name
-	initName := "Other"
-	if issue.Project != nil && len(issue.Project.Initiatives.Nodes) > 0 {
-		initName = issue.Project.Initiatives.Nodes[0].Name
-	} else if issue.Project != nil && issue.Project.Name != "" {
-		initName = issue.Project.Name
-	}
 
 	// Compute schedule
 	schedule := Unscheduled
@@ -86,9 +81,30 @@ func makeIssue(issue LinearIssue) *IssueData {
 		Points:     points,
 		Schedule:   schedule,
 		MonthName:  monthName,
-		MonthKey:   monthKey,
-		InitName:   initName,
+		YearMonth:  yearmonth.FromTime(targetDate),
 		URL:        issue.URL,
+	}
+
+	for _, label := range issue.Labels.Nodes {
+		tag := label.Name
+		result.Labels = append(result.Labels, tag)
+		if s, ok := strings.CutPrefix(tag, "Client-"); ok {
+			result.Clients = append(result.Clients, s)
+		}
+		if s := config.TagsToBuckets[tag]; s != "" {
+			result.Bucket = s
+		}
+	}
+
+	// Compute initiative name
+	result.InitName = "Other"
+	if issue.Project != nil && len(issue.Project.Initiatives.Nodes) > 0 {
+		result.InitName = issue.Project.Initiatives.Nodes[0].Name
+	} else if issue.Project != nil && issue.Project.Name != "" {
+		result.InitName = issue.Project.Name
+	}
+	if result.Bucket != "" {
+		result.InitName = result.Bucket
 	}
 
 	return result
@@ -131,29 +147,36 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 		}
 	}
 
+	currentMonth := yearmonth.FromTime(time.Now().UTC())
+
 	// Group by month
-	monthData := make(map[string]*MonthData)
+	monthData := make(map[yearmonth.YM]*MonthData)
 
 	for _, issue := range wrappedIssues {
-		md, ok := monthData[issue.MonthName]
+		md, ok := monthData[issue.YearMonth]
 		if !ok {
 			md = &MonthData{
 				Name:        issue.MonthName,
-				Key:         issue.MonthKey,
+				Key:         issue.YearMonth,
+				IsPast:      issue.YearMonth < currentMonth,
 				Initiatives: make(map[string]*InitiativeData),
 			}
-			monthData[issue.MonthName] = md
+			md.Config = config.ByMonth[md.Key]
+			if md.Config == nil {
+				md.Config = &MonthConfig{}
+			}
+			md.Capacity = md.Config.Capacity
+			if md.Capacity == 0 {
+				md.Capacity = config.DefaultCapacity
+			}
+			for bucket := range md.Config.Budget {
+				_ = md.LookupInitiative(bucket)
+			}
+			monthData[issue.YearMonth] = md
 		}
 
 		// Add to initiatives ("Other" for orphans)
-		idata, ok := md.Initiatives[issue.InitName]
-		if !ok {
-			idata = &InitiativeData{
-				Name:   issue.InitName,
-				Issues: make([]*IssueData, 0),
-			}
-			md.Initiatives[issue.InitName] = idata
-		}
+		idata := md.LookupInitiative(issue.InitName)
 
 		// Store the issue
 		idata.Issues = append(idata.Issues, issue)
@@ -174,18 +197,24 @@ func computeReport(issues []LinearIssue) (*Report, error) {
 
 	// Sort months by key
 	slices.SortFunc(monthSlice, func(a, b *MonthData) int {
-		return a.Key - b.Key
+		return cmp.Compare(a.Key, b.Key)
 	})
 
 	// Calculate totals and sort initiatives within each month
 	for _, md := range monthSlice {
 		// Calculate month totals from initiatives
 		for _, idata := range md.Initiatives {
+			idata.Budget = md.Config.Budget[idata.Name]
+
+			idata.Used = idata.Fixed + idata.Planned + idata.Flex
+			idata.Total = max(idata.Budget, idata.Used)
+
 			md.Fixed += idata.Fixed
 			md.Planned += idata.Planned
 			md.Flex += idata.Flex
+			md.Used += idata.Used
+			md.Total += idata.Total
 		}
-		md.Total = md.Fixed + md.Planned + md.Flex
 
 		// Get sorted slice of initiatives
 		initSlice := slices.Collect(maps.Values(md.Initiatives))

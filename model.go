@@ -1,6 +1,10 @@
 package main
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/prairiegroupinc/linearsummarybot/yearmonth"
+)
 
 // Report represents a complete summary of all issues organized by month
 type Report struct {
@@ -13,24 +17,52 @@ type IssueData struct {
 	Points     int
 	Schedule   Schedule
 	MonthName  string
-	MonthKey   int
+	YearMonth  yearmonth.YM
 	InitName   string // empty if orphaned
 	URL        string
+	Bucket     string
+	Labels     []string
+	Clients    []string
 }
 
 type MonthData struct {
 	Name        string
-	Key         int // YYYYMM format
+	Key         yearmonth.YM
 	Initiatives map[string]*InitiativeData
+	Config      *MonthConfig
+	IsPast      bool
+
+	Capacity int
 
 	// Cached calculations
 	Fixed   int
 	Planned int
 	Flex    int
+	Used    int
 	Total   int
 
 	// Cached sorting
 	SortedInitiatives []*InitiativeData
+}
+
+func (md *MonthData) RemainingBudget() int {
+	return md.Capacity - md.Total
+}
+
+func (md *MonthData) IsOverCapacity() bool {
+	return md.RemainingBudget() < 0
+}
+
+func (md *MonthData) LookupInitiative(name string) *InitiativeData {
+	idata, ok := md.Initiatives[name]
+	if !ok {
+		idata = &InitiativeData{
+			Name:   name,
+			Issues: make([]*IssueData, 0),
+		}
+		md.Initiatives[name] = idata
+	}
+	return idata
 }
 
 type InitiativeData struct {
@@ -39,6 +71,8 @@ type InitiativeData struct {
 	Planned int
 	Flex    int
 	Total   int
+	Used    int
+	Budget  int
 	Issues  []*IssueData
 }
 
